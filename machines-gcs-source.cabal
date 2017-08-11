@@ -1,0 +1,48 @@
+name:                machines-gcs-source
+version:             0.1.0.0
+-- synopsis:
+-- description:
+homepage:            https://github.com/d61h6k4/machines-gcs-source#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Danil
+maintainer:          dbihbka@protonmail.ch
+copyright:           2017 Danil
+category:            Web
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Data.Machine.Source.Google.Storage
+  build-depends:       base >= 4.7 && < 5,
+                       exceptions >= 0.8 && < 1,
+                       gogol >= 0.3 && < 1,
+                       gogol-storage >= 0.3 && < 1,
+                       lens >= 4.14 && < 5,
+                       resourcet >= 1.1 && < 2,
+                       text >= 1.2 && < 2
+  default-language:    Haskell2010
+
+test-suite doctests
+  type:                exitcode-stdio-1.0
+  ghc-options:         -threaded
+  main-is:             Doctests.hs
+  build-depends:       base >= 4.9
+                     , doctest >= 0.8 && < 1
+  hs-source-dirs:      test
+  default-language:    Haskell2010
+
+test-suite machines-gcs-source-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , machines-gcs-source
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/d61h6k4/machines-gcs-source
