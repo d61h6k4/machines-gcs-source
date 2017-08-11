@@ -5,19 +5,60 @@
 
 module Data.Machine.Source.Google.Storage where
 
+import Data.ByteString.Lazy (ByteString)
 import Data.Monoid ((<>))
+import Data.Machine.Plan (PlanT)
 import Data.Text (Text)
 import Network.Google (HasEnv)
-import Control.Monad.IO.Class (MonadIO)
-import Control.Monad.Trans.Resource (runResourceT, MonadBaseControl)
+import Control.Monad.IO.Class (MonadIO(liftIO))
+import Control.Monad.Trans (MonadTrans(lift))
+import Control.Monad.Trans.Resource
+       (MonadBaseControl, MonadResource, ResourceT, liftResourceT,
+        runResourceT)
 import Control.Lens ((&), (^.), (?~))
-import Control.Monad.Catch (MonadThrow, MonadCatch(catch))
+import Control.Monad.Catch (MonadCatch(catch), MonadThrow)
 import Network.Google.Auth.Scope (AllowScopes, HasScope')
 
 import qualified Data.Text as Text
 import qualified Network.Google as Google
 import qualified Network.Google.Storage as Storage
+import qualified Data.Machine as Machine
+import qualified Data.Conduit as Conduit
+import qualified Data.Conduit.Binary as Conduit
 
+
+-- | Yield data from Google Cloud Storage's bucket with 'bucketName'
+-- where object names is match with 'objectName'.
+--
+-- You can use wildcard '*' for subsctitude any word in name.
+-- Name can't contains '/' symbol.
+fromGCS ::
+     ( HasScope' s '[ "https://www.googleapis.com/auth/cloud-platform"
+                    , "https://www.googleapis.com/auth/cloud-platform.read-only"
+                    , "https://www.googleapis.com/auth/devstorage.full_control"
+                    , "https://www.googleapis.com/auth/devstorage.read_only"
+                    , "https://www.googleapis.com/auth/devstorage.read_write"] ~ 'True
+     , AllowScopes s
+     , HasEnv s r
+     , MonadCatch (PlanT k ByteString (ResourceT IO))
+     , MonadBaseControl IO (PlanT k ByteString (ResourceT IO))
+     )
+  => r
+  -> Text
+  -> Text
+  -> PlanT k ByteString (ResourceT IO) b
+fromGCS env bucketName objectName =
+  parseObjectName env bucketName objectName >>= go
+  where
+    go [] = Machine.stop
+    go (x:xs) =
+      lift
+        (Google.runGoogle
+           env
+           (Google.download (Storage.objectsGet bucketName objectName)) >>= \stream ->
+           stream Conduit.$$+- Conduit.sinkLbs) >>=
+      Machine.yield >>
+      go xs
 
 -- | So in 'fromGCS' you can use wildcard `*` for objectName
 -- but 'Network.Google.Storage' doesn't support wildcards hence
@@ -88,6 +129,9 @@ resolve prefix oprefix objName =
 -- | Prefix is everything before first `*` symbol.
 --
 -- >>> parsePrefix "prefix/*/suffix"
+-- "prefix/"
+--
+-- >>> parsePrefix "prefix/*/suffix/*/suffix"
 -- "prefix/"
 parsePrefix :: Text -> Text
 parsePrefix = Text.takeWhile (/= '*')
