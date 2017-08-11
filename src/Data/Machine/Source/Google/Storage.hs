@@ -10,7 +10,7 @@ import Data.Text (Text)
 import Network.Google (HasEnv)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadBaseControl)
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((&), (^.), (?~))
 import Control.Monad.Catch (MonadThrow, MonadCatch(catch))
 import Network.Google.Auth.Scope (AllowScopes, HasScope')
 
@@ -67,13 +67,12 @@ parseObjectName env bucketName objName =
              (Google.catching
                 Google._Error
                 (Google.send
-                   (Storage.objectsList bucketName & Storage.olPrefix .~
-                    Just prefix &
-                    Storage.olDelimiter .~
-                    Just "/"))
+                   (Storage.objectsList bucketName & Storage.olPrefix ?~ prefix
+                                                   & Storage.olDelimiter ?~ "/"))
                 (\_ -> return Storage.objects))
          mapM
-           (\oprefix -> parseObjectName env bucketName (resolve prefix oprefix objName ))
+           (\oprefix ->
+              parseObjectName env bucketName (resolve prefix oprefix objName))
            (objsName ^. Storage.oPrefixes) >>=
            return . concat
 
@@ -83,7 +82,8 @@ parseObjectName env bucketName objName =
 -- >>> resolve "prefix/" "prefix/o/" "prefix/*/string"
 -- "prefix/o/string"
 resolve :: Text -> Text -> Text -> Text
-resolve prefix oprefix objName = oprefix <> Text.drop (2 + Text.length prefix) objName
+resolve prefix oprefix objName =
+  oprefix <> Text.drop (2 + Text.length prefix) objName
 
 -- | Prefix is everything before first `*` symbol.
 --
