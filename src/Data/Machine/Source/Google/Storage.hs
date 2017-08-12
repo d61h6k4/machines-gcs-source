@@ -6,6 +6,7 @@
 module Data.Machine.Source.Google.Storage where
 
 import Data.ByteString.Lazy (ByteString)
+import Data.Maybe (isJust, fromJust)
 import Data.Monoid ((<>))
 import Data.Machine.Plan (PlanT)
 import Data.Text (Text)
@@ -18,8 +19,10 @@ import Control.Monad.Trans.Resource
 import Control.Lens ((&), (^.), (?~))
 import Control.Monad.Catch (MonadCatch(catch), MonadThrow)
 import Network.Google.Auth.Scope (AllowScopes, HasScope')
+import Network.HTTP.Types (urlEncode)
 
 import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
 import qualified Network.Google as Google
 import qualified Network.Google.Storage as Storage
 import qualified Data.Machine as Machine
@@ -40,22 +43,23 @@ fromGCS ::
                     , "https://www.googleapis.com/auth/devstorage.read_write"] ~ 'True
      , AllowScopes s
      , HasEnv s r
-     , MonadCatch (PlanT k ByteString (ResourceT IO))
-     , MonadBaseControl IO (PlanT k ByteString (ResourceT IO))
      )
   => r
   -> Text
   -> Text
   -> PlanT k ByteString (ResourceT IO) b
 fromGCS env bucketName objectName =
-  parseObjectName env bucketName objectName >>= go
+  lift (parseObjectName env bucketName objectName) >>= go
   where
     go [] = Machine.stop
     go (x:xs) =
       lift
         (Google.runGoogle
            env
-           (Google.download (Storage.objectsGet bucketName objectName)) >>= \stream ->
+           (Google.download
+              (Storage.objectsGet
+                 bucketName
+                 (Text.decodeUtf8 (urlEncode False (Text.encodeUtf8 x))))) >>= \stream ->
            stream Conduit.$$+- Conduit.sinkLbs) >>=
       Machine.yield >>
       go xs
@@ -98,8 +102,23 @@ parseObjectName ::
   -> m [Text]
 parseObjectName env bucketName objName =
   let prefix = parsePrefix objName
-  in if objName == parsePrefix objName
-       then return [objName]
+  in if objName == prefix
+       then do
+         objsName <-
+           runResourceT $
+           Google.runGoogle
+             env
+             (Google.catching
+                Google._Error
+                (Google.send
+                   (Storage.objectsList bucketName & Storage.olPrefix ?~ objName))
+                (\_ -> return Storage.objects))
+         return
+           (map
+              (\oitem -> fromJust (oitem ^. Storage.objName))
+              (filter
+                 (\oitem -> isJust (oitem ^. Storage.objName))
+                 (objsName ^. Storage.oItems)))
        else do
          objsName <-
            runResourceT $
@@ -108,8 +127,9 @@ parseObjectName env bucketName objName =
              (Google.catching
                 Google._Error
                 (Google.send
-                   (Storage.objectsList bucketName & Storage.olPrefix ?~ prefix
-                                                   & Storage.olDelimiter ?~ "/"))
+                   (Storage.objectsList bucketName & Storage.olPrefix ?~ prefix &
+                    Storage.olDelimiter ?~
+                    "/"))
                 (\_ -> return Storage.objects))
          mapM
            (\oprefix ->
