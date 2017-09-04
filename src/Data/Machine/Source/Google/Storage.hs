@@ -43,11 +43,14 @@ fromGCS ::
                     , "https://www.googleapis.com/auth/devstorage.read_write"] ~ 'True
      , AllowScopes s
      , HasEnv s r
+     , MonadResource m
+     , MonadIO m
+     , m ~ ResourceT IO
      )
   => r
   -> Text
   -> Text
-  -> PlanT k ByteString (ResourceT IO) b
+  -> PlanT k ByteString m b
 fromGCS env bucketName objectName =
   lift (parseObjectName env bucketName objectName) >>= go
   where
